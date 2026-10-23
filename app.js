@@ -26,7 +26,7 @@ app.innerHTML = `
     </section>
 
     <section class="section report-section" id="report">
-      <div class="section-heading"><div><p class="eyebrow">QUICK ROAD REPORT</p><h2>What did you spot?</h2></div><span class="privacy-note">Your photo stays on this device unless an AI service is connected.</span></div>
+      <div class="section-heading"><div><p class="eyebrow">QUICK ROAD REPORT</p><h2>What did you spot?</h2></div><span class="privacy-note">Your photo is analyzed in this browser and is not sent to an AI service.</span></div>
       <div class="report-grid">
         <div class="upload-card card">
           <div class="card-heading"><span class="step">01</span><div><h3>Add a photo</h3><p>Choose a clear image of the road issue.</p></div></div>
@@ -37,7 +37,7 @@ app.innerHTML = `
           </label>
           <p class="field-message" id="upload-message" role="status">Images are checked on your device before analysis.</p>
           <button class="button button-primary full-width" id="analyze-button" type="button" disabled>Analyze road image <span aria-hidden="true">↗</span></button>
-          <p class="ai-note" id="ai-status" aria-live="polite">AI detection service is not connected yet.</p>
+          <p class="ai-note" id="ai-status" aria-live="polite">On-device pothole detector · model downloads when you analyze your first image.</p>
         </div>
         <div class="location-card card">
           <div class="card-heading"><span class="step">02</span><div><h3>Pin the location</h3><p>Add where you found the issue.</p></div></div>
@@ -119,44 +119,173 @@ function initMap() {
   reports.forEach(addReportMarker);
   setTimeout(() => leafletMap.invalidateSize(), 100);
 }
-function setImage(file) {
+async function setImage(file) {
   const message = document.querySelector('#upload-message');
-  if (!file) return;
-  if (!file.type.startsWith('image/')) { message.textContent = 'Please choose an image file.'; message.className = 'field-message error'; return; }
-  if (file.size >= MAX_IMAGE_BYTES) { message.textContent = 'That image is 5 MB or larger. Choose an image under 5 MB.'; message.className = 'field-message error'; return; }
-  activeFile = file;
   const preview = document.querySelector('#image-preview');
+  const placeholder = document.querySelector('#upload-placeholder');
+  const analyzeButton = document.querySelector('#analyze-button');
+  const submitButton = document.querySelector('#submit-report');
+  const resultCard = document.querySelector('#result-card');
+  const supportedImageExtensions = new Set(['.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.apng', '.webp', '.gif', '.bmp', '.dib', '.avif', '.heic', '.heif', '.tif', '.tiff', '.svg']);
+  const resetSelection = () => {
+    if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+    delete preview.dataset.objectUrl;
+    preview.removeAttribute('src');
+    preview.hidden = true;
+    placeholder.hidden = false;
+    activeFile = null;
+    analyzeButton.disabled = true;
+    submitButton.disabled = true;
+    resultCard.hidden = true;
+  };
+  if (!file) return;
+  if (file.size >= MAX_IMAGE_BYTES) {
+    resetSelection();
+    message.textContent = 'That image is 5 MB or larger. Choose an image under 5 MB.';
+    message.className = 'field-message error';
+    return;
+  }
+  const extension = file.name.includes('.') ? `.${file.name.split('.').pop().toLowerCase()}` : '';
+  const isImage = file.type.toLowerCase().startsWith('image/') || supportedImageExtensions.has(extension);
+  if (!isImage || file.type.toLowerCase() === 'application/pdf' || extension === '.pdf' || extension === '.json') {
+    resetSelection();
+    message.textContent = 'Choose an image such as JPG, PNG, WEBP, GIF, HEIC, or AVIF. PDF and JSON files are not supported.';
+    message.className = 'field-message error';
+    return;
+  }
   if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
-  preview.dataset.objectUrl = URL.createObjectURL(file);
-  preview.src = preview.dataset.objectUrl;
-  preview.hidden = false;
-  document.querySelector('#upload-placeholder').hidden = true;
-  message.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
-  message.className = 'field-message';
-  document.querySelector('#analyze-button').disabled = false;
-  document.querySelector('#submit-report').disabled = !currentPosition;
-  document.querySelector('#result-card').hidden = true;
+  const objectUrl = URL.createObjectURL(file);
+  preview.dataset.objectUrl = objectUrl;
+  preview.onload = () => {
+    activeFile = file;
+    preview.hidden = false;
+    placeholder.hidden = true;
+    message.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+    message.className = 'field-message';
+    analyzeButton.disabled = false;
+    submitButton.disabled = !currentPosition;
+    resultCard.hidden = true;
+  };
+  preview.onerror = () => {
+    resetSelection();
+    message.textContent = 'This image format could not be opened by your browser. Try saving it as JPG, PNG, or WEBP.';
+    message.className = 'field-message error';
+  };
+  preview.src = objectUrl;
 }
+let detectorSessionPromise = null;
+const DETECTOR_MODEL_URL = 'https://huggingface.co/peterhdd/pothole-detection-yolov8/resolve/main/best.onnx';
+const MODEL_INPUT_SIZE = 640;
+
+async function loadDetector() {
+  if (!window.ort) throw new Error('The on-device AI runtime could not load. Check your internet connection and reload.');
+  if (!detectorSessionPromise) {
+    detectorSessionPromise = window.ort.InferenceSession.create(DETECTOR_MODEL_URL, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all'
+    }).catch(error => {
+      detectorSessionPromise = null;
+      throw error;
+    });
+  }
+  return detectorSessionPromise;
+}
+
+function makeDetectorInput(image) {
+  const size = MODEL_INPUT_SIZE;
+  const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
+  const width = Math.round(image.naturalWidth * scale);
+  const height = Math.round(image.naturalHeight * scale);
+  const left = Math.floor((size - width) / 2);
+  const top = Math.floor((size - height) / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = 'rgb(114,114,114)';
+  context.fillRect(0, 0, size, size);
+  context.drawImage(image, left, top, width, height);
+  const pixels = context.getImageData(0, 0, size, size).data;
+  const data = new Float32Array(3 * size * size);
+  for (let i = 0; i < size * size; i++) {
+    data[i] = pixels[i * 4] / 255;
+    data[size * size + i] = pixels[i * 4 + 1] / 255;
+    data[2 * size * size + i] = pixels[i * 4 + 2] / 255;
+  }
+  return { tensor: new window.ort.Tensor('float32', data, [1, 3, size, size]), scale, left, top, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight };
+}
+
+function decodePotholeOutput(output, transform) {
+  const dims = output.dims;
+  const values = output.data;
+  let channels, candidates, transposed;
+  if (dims.length !== 3) throw new Error('The downloaded model returned an unsupported result.');
+  if (dims[1] <= dims[2]) { channels = dims[1]; candidates = dims[2]; transposed = true; }
+  else { candidates = dims[1]; channels = dims[2]; transposed = false; }
+  if (channels < 5) throw new Error('The pothole model result is incomplete.');
+  const get = (candidate, channel) => transposed ? values[channel * candidates + candidate] : values[candidate * channels + channel];
+  const detections = [];
+  const threshold = 0.25;
+  for (let i = 0; i < candidates; i++) {
+    const confidence = get(i, 4);
+    if (!Number.isFinite(confidence) || confidence < threshold) continue;
+    const cx = get(i, 0), cy = get(i, 1), boxWidth = get(i, 2), boxHeight = get(i, 3);
+    const x1 = Math.max(0, (cx - boxWidth / 2 - transform.left) / transform.scale);
+    const y1 = Math.max(0, (cy - boxHeight / 2 - transform.top) / transform.scale);
+    const x2 = Math.min(transform.imageWidth, (cx + boxWidth / 2 - transform.left) / transform.scale);
+    const y2 = Math.min(transform.imageHeight, (cy + boxHeight / 2 - transform.top) / transform.scale);
+    if (x2 > x1 && y2 > y1) detections.push({ confidence, x1, y1, x2, y2 });
+  }
+  detections.sort((a, b) => b.confidence - a.confidence);
+  const kept = [];
+  for (const candidate of detections) {
+    const area = (candidate.x2 - candidate.x1) * (candidate.y2 - candidate.y1);
+    const overlaps = kept.some(other => {
+      const iw = Math.max(0, Math.min(candidate.x2, other.x2) - Math.max(candidate.x1, other.x1));
+      const ih = Math.max(0, Math.min(candidate.y2, other.y2) - Math.max(candidate.y1, other.y1));
+      const intersection = iw * ih;
+      const otherArea = (other.x2 - other.x1) * (other.y2 - other.y1);
+      return intersection / (area + otherArea - intersection) > 0.45;
+    });
+    if (!overlaps) kept.push(candidate);
+    if (kept.length === 20) break;
+  }
+  return kept;
+}
+
 async function analyzeImage() {
   if (!activeFile) return;
   const status = document.querySelector('#ai-status');
   const button = document.querySelector('#analyze-button');
-  button.disabled = true; button.textContent = 'Checking for AI service…';
-  status.textContent = 'Looking for a configured detection service…';
+  const preview = document.querySelector('#image-preview');
+  button.disabled = true;
+  button.textContent = 'Loading on-device model…';
+  status.textContent = 'Downloading the pothole detector to this browser (about 45 MB on first use). Your photo stays on this device.';
   try {
-    const body = new FormData(); body.append('image', activeFile);
-    if (currentPosition) { body.append('latitude', currentPosition.latitude); body.append('longitude', currentPosition.longitude); }
-    const response = await fetch('/api/detect', { method: 'POST', body });
-    if (!response.ok) throw new Error(response.status === 404 ? 'AI detection service is not connected. Add a /api/detect service to enable pothole predictions.' : `AI service returned error ${response.status}.`);
-    const result = await response.json();
-    if (!result || !result.label) throw new Error('AI service returned no detection result.');
-    document.querySelector('#result-card').innerHTML = `<div><span class="step">AI RESULT</span><h3>${escapeHtml(result.label)}</h3><p>${escapeHtml(result.description || 'Review this result before saving your report.')}</p></div><span class="confidence">${Number.isFinite(result.confidence) ? `${Math.round(result.confidence * 100)}% confidence` : 'Detection result'}</span>`;
-    document.querySelector('#result-card').hidden = false;
-    status.textContent = 'AI analysis complete. Please review the result.';
-  } catch (error) { status.textContent = error.message.includes('Failed to fetch') ? 'AI detection service is not connected yet. The image has not been uploaded.' : error.message; }
-  finally { button.disabled = !activeFile; button.innerHTML = 'Analyze road image <span aria-hidden="true">↗</span>'; }
-}
-function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
+    const session = await loadDetector();
+    status.textContent = 'Checking the image on this device…';
+    const input = makeDetectorInput(preview);
+    const results = await session.run({ [session.inputNames[0]]: input.tensor });
+    const output = results[session.outputNames[0]];
+    const detections = decodePotholeOutput(output, input);
+    const card = document.querySelector('#result-card');
+    if (detections.length) {
+      const best = detections[0];
+      const areaPercent = ((best.x2 - best.x1) * (best.y2 - best.y1) / (input.imageWidth * input.imageHeight) * 100).toFixed(1);
+      card.innerHTML = `<div><span class="step">ON-DEVICE AI RESULT</span><h3>${detections.length} possible pothole${detections.length === 1 ? '' : 's'} detected</h3><p>The largest detection covers about ${areaPercent}% of the image. Check the photo and outlined area yourself; this estimate is not the pothole’s real-world size.</p></div><span class="confidence">${Math.round(best.confidence * 100)}% model confidence</span>`;
+      status.textContent = 'Analysis ran in this browser. Results can be wrong; please review the photo.';
+    } else {
+      card.innerHTML = '<div><span class="step">ON-DEVICE AI RESULT</span><h3>No pothole detected</h3><p>The model did not find a pothole with enough confidence. This does not prove the road is clear; try a closer, well-lit photo.</p></div><span class="confidence">No confident detection</span>';
+      status.textContent = 'Analysis ran in this browser. Results can be wrong; please review the photo.';
+    }
+    card.hidden = false;
+  } catch (error) {
+    status.textContent = error.message || 'On-device analysis failed. Check your connection and try again.';
+  } finally {
+    button.disabled = !activeFile;
+    button.innerHTML = 'Analyze road image <span aria-hidden="true">↗</span>';
+  }
+}function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function addReportMarker(report) {
   if (!window.L || !leafletMap) return;
   L.circleMarker([report.latitude, report.longitude], { radius: 9, color: '#c74837', fillColor: '#f27660', fillOpacity: .9, weight: 3 }).addTo(leafletMap).bindPopup(`<strong>${escapeHtml(report.name)}</strong><br>Saved on this device`);
@@ -170,7 +299,10 @@ function saveReport() {
   document.querySelector('#submit-report').disabled = true;
 }
 
-document.querySelector('#image-input').addEventListener('change', event => setImage(event.target.files[0]));
+document.querySelector('#image-input').addEventListener('change', event => {
+  setImage(event.target.files?.[0]);
+  event.target.value = '';
+});
 document.querySelector('#upload-zone').addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); document.querySelector('#image-input').click(); } });
 document.querySelector('#locate-button').addEventListener('click', startLocation);
 document.querySelector('#nav-locate').addEventListener('click', startLocation);
@@ -179,3 +311,4 @@ document.querySelector('#analyze-button').addEventListener('click', analyzeImage
 document.querySelector('#submit-report').addEventListener('click', saveReport);
 window.addEventListener('load', initMap);
 window.addEventListener('hashchange', () => { if (location.hash === '#map-section' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100); });
+
