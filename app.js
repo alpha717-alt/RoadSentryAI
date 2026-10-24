@@ -3,7 +3,10 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 let currentPosition = null;
 let activeFile = null;
 let leafletMap = null;
+let overviewMap = null;
 let userMarker = null;
+let overviewUserMarker = null;
+let hasCenteredOnLocation = false;
 let watchId = null;
 let routeMap = null;
 let routeUserMarker = null;
@@ -110,7 +113,15 @@ function updateLocation(position) {
     const point = [currentPosition.latitude, currentPosition.longitude];
     if (!userMarker) userMarker = L.marker(point).addTo(leafletMap).bindPopup('Your current location');
     else userMarker.setLatLng(point);
-    leafletMap.setView(point, 15);
+    if (overviewMap) {
+      if (!overviewUserMarker) overviewUserMarker = L.marker(point).addTo(overviewMap).bindPopup('Your current location');
+      else overviewUserMarker.setLatLng(point);
+    }
+    if (!hasCenteredOnLocation) {
+      leafletMap.setView(point, 15);
+      if (overviewMap) overviewMap.setView(point, 15);
+      hasCenteredOnLocation = true;
+    }
   }
 }
 function startLocation() {
@@ -136,14 +147,19 @@ function stopLocation() {
   document.querySelector('#map-empty').hidden = false;
   setStatus('Location sharing stopped', '');
   if (userMarker && leafletMap) { leafletMap.removeLayer(userMarker); userMarker = null; }
+  if (overviewUserMarker && overviewMap) { overviewMap.removeLayer(overviewUserMarker); overviewUserMarker = null; }
+  hasCenteredOnLocation = false;
   if (routeUserMarker && routeMap) { routeMap.removeLayer(routeUserMarker); routeUserMarker = null; }
   document.querySelector('#submit-report').disabled = true;
 }
 function initMap() {
   const mapElement = document.querySelector('#map');
-  if (!window.L || !mapElement || leafletMap) return;
+  if (!window.L || !mapElement || leafletMap || overviewMap) return;
   leafletMap = L.map('real-map', { scrollWheelZoom: false }).setView([20, 0], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(leafletMap);
+  overviewMap = L.map('map', { scrollWheelZoom: false }).setView([20, 0], 2);
+  const tileLayer = () => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
+  tileLayer().addTo(leafletMap);
+  tileLayer().addTo(overviewMap);
   if (currentPosition) updateLocation({ coords: currentPosition });
   reports.forEach(addReportMarker);
   setTimeout(() => leafletMap.invalidateSize(), 100);
@@ -183,6 +199,12 @@ async function setImage(file) {
     return;
   }
   if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+  activeFile = null;
+  analyzeButton.disabled = true;
+  submitButton.disabled = true;
+  resultCard.hidden = true;
+  document.querySelector('#submit-message').textContent = '';
+  submitButton.textContent = 'Save report →';
   const objectUrl = URL.createObjectURL(file);
   preview.dataset.objectUrl = objectUrl;
   preview.onload = () => {
@@ -318,11 +340,14 @@ async function analyzeImage() {
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function addReportMarker(report) {
   if (!window.L || !leafletMap) return;
-  L.circleMarker([report.latitude, report.longitude], { radius: 9, color: '#c74837', fillColor: '#f27660', fillOpacity: .9, weight: 3 }).addTo(leafletMap).bindPopup(`<strong>${escapeHtml(report.name)}</strong><br>Saved on this device`);
+  const popup = `<strong>${escapeHtml(report.name)}</strong><br>Saved on this device`;
+  const options = { radius: 9, color: '#c74837', fillColor: '#f27660', fillOpacity: .9, weight: 3 };
+  L.circleMarker([report.latitude, report.longitude], options).addTo(leafletMap).bindPopup(popup);
+  if (overviewMap) L.circleMarker([report.latitude, report.longitude], options).addTo(overviewMap).bindPopup(popup);
 }
 function saveReport() {
   if (!activeFile || !currentPosition) return;
-  reports.push({ latitude: currentPosition.latitude, longitude: currentPosition.longitude, name: activeFile.name });
+  reports.push({ createdAt: new Date().toISOString(), latitude: currentPosition.latitude, longitude: currentPosition.longitude, name: activeFile.name });
   try { localStorage.setItem('roadsentry-reports', JSON.stringify(reports)); } catch { }
   addReportMarker(reports[reports.length - 1]);
   document.querySelector('#submit-message').textContent = `Report saved on this device at ${currentPosition.latitude.toFixed(5)}, ${currentPosition.longitude.toFixed(5)}. No server is connected to share it with a road authority.`;
