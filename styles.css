@@ -64,3 +64,8 @@ body{background:radial-gradient(ellipse at 4% 7%,rgba(201,250,104,.16),transpare
 .card,.steps article{background-color:rgba(255,255,255,.88);backdrop-filter:blur(8px)}
 @keyframes roadSentryAmbient{0%{background-position:0% 10%,100% 90%,0 0}100%{background-position:100% 80%,0% 20%,0 0}}
 @media(prefers-reduced-motion:reduce){.report-section,#route-planner,#community-reports,#recommendations,#workflow{animation:none;background-position:50% 50%,50% 50%,0 0}}
+/* Slow ambient motion across the page background */
+/* Slow ambient motion across the page background */
+body{background-size:150% 150%,150% 150%,100% 100%;background-position:0% 10%,100% 80%,50% 50%;animation:roadSentryPageGlow 34s ease-in-out infinite alternate}
+@keyframes roadSentryPageGlow{0%{background-position:0% 10%,100% 80%,50% 50%}100%{background-position:100% 70%,0% 20%,50% 50%}}
+@media(prefers-reduced-motion:reduce){body{animation:none;background-position:50% 50%,50% 50%,50% 50%}}
