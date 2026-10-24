@@ -57,3 +57,10 @@ body{background:radial-gradient(ellipse at 4% 7%,rgba(201,250,104,.16),transpare
 
 /* Keep map panes below the sticky header */
 .navbar{z-index:2000}
+
+
+/* Soft animated color across the light sections */
+.report-section,#route-planner,#community-reports,#recommendations,#workflow{background-color:#f3f8f5;background-image:radial-gradient(ellipse at 12% 10%,rgba(201,250,104,.18),transparent 34%),radial-gradient(ellipse at 88% 72%,rgba(100,197,188,.16),transparent 36%),linear-gradient(135deg,#fbfcfa 0%,#edf4f2 54%,#f7f8f3 100%);background-size:145% 145%,140% 140%,100% 100%;background-position:0% 10%,100% 90%,0 0;animation:roadSentryAmbient 30s ease-in-out infinite alternate}
+.card,.steps article{background-color:rgba(255,255,255,.88);backdrop-filter:blur(8px)}
+@keyframes roadSentryAmbient{0%{background-position:0% 10%,100% 90%,0 0}100%{background-position:100% 80%,0% 20%,0 0}}
+@media(prefers-reduced-motion:reduce){.report-section,#route-planner,#community-reports,#recommendations,#workflow{animation:none;background-position:50% 50%,50% 50%,0 0}}
