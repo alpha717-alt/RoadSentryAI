@@ -5,12 +5,20 @@ let activeFile = null;
 let leafletMap = null;
 let userMarker = null;
 let watchId = null;
+let routeMap = null;
+let routeUserMarker = null;
+let routeEndMarker = null;
+let routeLayers = [];
 const reports = [];
+try {
+  const storedReports = JSON.parse(localStorage.getItem('roadsentry-reports') || '[]');
+  if (Array.isArray(storedReports)) reports.push(...storedReports.filter(report => Number.isFinite(report.latitude) && Number.isFinite(report.longitude)));
+} catch {}
 
 app.innerHTML = `
   <header class="navbar">
     <a class="brand" href="#overview" aria-label="RoadSentry home">RoadSentry <span>AI</span></a>
-    <nav aria-label="Primary navigation"><a href="#report">Report a road issue</a><a href="#map-section">Live map</a></nav>
+    <nav aria-label="Primary navigation"><a href="#report">Report a road issue</a><a href="#route-planner">Find a route</a><a href="#map-section">Live map</a></nav>
     <button class="nav-locate" id="nav-locate" type="button">◎ <span>Share my location</span></button>
   </header>
   <main>
@@ -53,6 +61,20 @@ app.innerHTML = `
       <p class="submit-message" id="submit-message" role="status"></p>
     </section>
 
+    <section class="section route-section" id="route-planner">
+      <div class="section-heading"><div><p class="eyebrow">POTHOLE-AWARE ROUTING</p><h2>Find a route</h2></div><span class="privacy-note">Compares alternate OpenStreetMap routes with hazards mapped nearby.</span></div>
+      <div class="route-controls card">
+        <div class="route-control-copy"><h3>Where are you going?</h3><p>Start from your shared live location. Enter a destination to compare routes.</p></div>
+        <label class="route-destination-label" for="route-destination">Destination</label>
+        <div class="route-form"><input id="route-destination" type="text" autocomplete="street-address" placeholder="Enter an address or place"><button class="button button-primary" id="find-route-button" type="button">Compare routes <span aria-hidden="true">→</span></button></div>
+        <label class="route-consent"><input id="route-consent" type="checkbox"><span>When I compare routes, I agree to share my current coordinates and destination with OpenStreetMap search, OSRM routing, and OpenStreetMap hazard data services.</span></label>
+        <p class="route-disclaimer">Live traffic isn’t included. Pothole records on OpenStreetMap may be incomplete; “0 known” does not mean the road has no potholes. Reports saved here are stored only in this browser, not shared with other users.</p>
+      </div>
+      <p class="route-status" id="route-status" role="status">Share your location, enter a destination, then choose Compare routes.</p>
+      <div id="route-results" class="route-results" hidden></div>
+      <div id="route-map" aria-label="Map showing alternative routes and mapped potholes"></div>
+      <p class="route-attribution">Routing: OSRM · Map and hazard data: © OpenStreetMap contributors</p>
+    </section>
     <section class="section map-section" id="map-section">
       <div class="section-heading"><div><p class="eyebrow">ROAD WATCH</p><h2>Live location map</h2></div><span class="live-badge"><i></i> Ready for reports</span></div>
       <p class="map-intro">Your position appears here only after you enable location sharing. Reports you create on this device are shown as pins.</p>
@@ -79,6 +101,12 @@ function updateLocation(position) {
   document.querySelector('#submit-report').disabled = !activeFile;
   if (window.L) {
     if (!leafletMap) initMap();
+    if (routeMap) {
+      const routePoint = [currentPosition.latitude, currentPosition.longitude];
+      if (!routeUserMarker) routeUserMarker = L.marker(routePoint).addTo(routeMap).bindPopup('Your current location');
+      else routeUserMarker.setLatLng(routePoint);
+      if (!routeLayers.length) routeMap.setView(routePoint, 13);
+    }
     const point = [currentPosition.latitude, currentPosition.longitude];
     if (!userMarker) userMarker = L.marker(point).addTo(leafletMap).bindPopup('Your current location');
     else userMarker.setLatLng(point);
@@ -108,6 +136,7 @@ function stopLocation() {
   document.querySelector('#map-empty').hidden = false;
   setStatus('Location sharing stopped', '');
   if (userMarker && leafletMap) { leafletMap.removeLayer(userMarker); userMarker = null; }
+  if (routeUserMarker && routeMap) { routeMap.removeLayer(routeUserMarker); routeUserMarker = null; }
   document.querySelector('#submit-report').disabled = true;
 }
 function initMap() {
@@ -285,7 +314,8 @@ async function analyzeImage() {
     button.disabled = !activeFile;
     button.innerHTML = 'Analyze road image <span aria-hidden="true">↗</span>';
   }
-}function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
+}
+function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function addReportMarker(report) {
   if (!window.L || !leafletMap) return;
   L.circleMarker([report.latitude, report.longitude], { radius: 9, color: '#c74837', fillColor: '#f27660', fillOpacity: .9, weight: 3 }).addTo(leafletMap).bindPopup(`<strong>${escapeHtml(report.name)}</strong><br>Saved on this device`);
@@ -293,12 +323,123 @@ function addReportMarker(report) {
 function saveReport() {
   if (!activeFile || !currentPosition) return;
   reports.push({ latitude: currentPosition.latitude, longitude: currentPosition.longitude, name: activeFile.name });
+  try { localStorage.setItem('roadsentry-reports', JSON.stringify(reports)); } catch { }
   addReportMarker(reports[reports.length - 1]);
   document.querySelector('#submit-message').textContent = `Report saved on this device at ${currentPosition.latitude.toFixed(5)}, ${currentPosition.longitude.toFixed(5)}. No server is connected to share it with a road authority.`;
   document.querySelector('#submit-report').textContent = 'Report saved ✓';
   document.querySelector('#submit-report').disabled = true;
 }
 
+function initRouteMap() {
+  const element = document.querySelector('#route-map');
+  if (!window.L || !element || routeMap) return;
+  routeMap = L.map(element, { scrollWheelZoom: false }).setView(currentPosition ? [currentPosition.latitude, currentPosition.longitude] : [20, 0], currentPosition ? 13 : 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(routeMap);
+  if (currentPosition) {
+    routeUserMarker = L.marker([currentPosition.latitude, currentPosition.longitude]).addTo(routeMap).bindPopup('Your current location');
+  }
+  setTimeout(() => routeMap.invalidateSize(), 100);
+}
+function routePointSegmentDistance(point, start, end) {
+  const latitude = point[1] * Math.PI / 180;
+  const scaleX = 111320 * Math.cos(latitude);
+  const scaleY = 110540;
+  const px = point[0] * scaleX, py = point[1] * scaleY;
+  const ax = start[0] * scaleX, ay = start[1] * scaleY;
+  const bx = end[0] * scaleX, by = end[1] * scaleY;
+  const dx = bx - ax, dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+function routeIncludesHazard(route, hazard) {
+  const coords = route.geometry.coordinates;
+  for (let i = 1; i < coords.length; i++) {
+    if (routePointSegmentDistance([hazard.lon, hazard.lat], coords[i - 1], coords[i]) <= 25) return true;
+  }
+  return false;
+}
+async function findMappedHazards(routes) {
+  const all = routes.flatMap(route => route.geometry.coordinates);
+  const lons = all.map(point => point[0]), lats = all.map(point => point[1]);
+  const south = Math.min(...lats), north = Math.max(...lats), west = Math.min(...lons), east = Math.max(...lons);
+  if (north - south > 0.55 || east - west > 0.55) return null;
+  const bbox = `${south},${west},${north},${east}`;
+  const query = `[out:json][timeout:20];(node["hazard"="hole"](${bbox});way["hazard"="hole"](${bbox});node["hazard"="pothole"](${bbox});way["hazard"="pothole"](${bbox});node["man_made"="pothole"](${bbox});way["man_made"="pothole"](${bbox}););out center;`;
+  const response = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: `data=${encodeURIComponent(query)}` });
+  if (!response.ok) throw new Error('OpenStreetMap hazard lookup is temporarily unavailable.');
+  const data = await response.json();
+  return (data.elements || []).map(item => ({ lat: item.lat ?? item.center?.lat, lon: item.lon ?? item.center?.lon })).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
+}
+async function geocodeDestination(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('Destination search is temporarily unavailable. Try again later.');
+  const results = await response.json();
+  if (!results.length) throw new Error('I couldn’t find that destination. Try adding the city or area name.');
+  return { latitude: Number(results[0].lat), longitude: Number(results[0].lon), name: results[0].display_name };
+}
+async function fetchAlternativeRoutes(origin, destination) {
+  const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?alternatives=3&overview=full&geometries=geojson&steps=false`;
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('The route service is busy. Please try again shortly.');
+  const result = await response.json();
+  if (result.code !== 'Ok' || !result.routes?.length) throw new Error('No driving route was found between these places.');
+  return result.routes;
+}
+function drawRouteAlternatives(routes, destination, hazards) {
+  if (!routeMap) initRouteMap();
+  routeLayers.forEach(layer => routeMap.removeLayer(layer));
+  routeLayers = [];
+  if (routeEndMarker) routeMap.removeLayer(routeEndMarker);
+  routeEndMarker = L.marker([destination.latitude, destination.longitude]).addTo(routeMap).bindPopup('Destination');
+  const ranked = routes.map((route, index) => {
+    const osmCount = hazards ? hazards.filter(hazard => routeIncludesHazard(route, hazard)).length : null;
+    const localCount = reports.filter(report => routeIncludesHazard(route, { lat: report.latitude, lon: report.longitude })).length;
+    return { route, index, osmCount, localCount, total: osmCount === null ? null : osmCount + localCount };
+  });
+  ranked.sort((a, b) => a.total === null || b.total === null ? a.route.duration - b.route.duration : a.total - b.total || a.route.duration - b.route.duration);
+  const recommendedIndex = ranked[0].index;
+  routes.forEach((route, index) => {
+    const layer = L.geoJSON(route.geometry, { style: { color: index === recommendedIndex ? '#1b7058' : '#82928c', weight: index === recommendedIndex ? 7 : 5, opacity: index === recommendedIndex ? .95 : .65, dashArray: index === recommendedIndex ? null : '8 7' } }).addTo(routeMap);
+    layer.bindPopup(index === recommendedIndex ? 'Fewest mapped potholes (among routes shown)' : 'Alternative route');
+    routeLayers.push(layer);
+  });
+  const bounds = L.featureGroup([...routeLayers, routeEndMarker, ...(routeUserMarker ? [routeUserMarker] : [])]).getBounds();
+  if (bounds.isValid()) routeMap.fitBounds(bounds.pad(.12));
+  const results = document.querySelector('#route-results');
+  results.innerHTML = ranked.map((item, rank) => {
+    const trafficText = 'Traffic: not available';
+    const potholeText = item.total === null ? 'Mapped pothole data unavailable' : `${item.total} known nearby pothole${item.total === 1 ? '' : 's'}${item.localCount ? ` (${item.localCount} saved here)` : ''}`;
+    return `<article class="route-option ${rank === 0 ? 'is-recommended' : ''}"><div><span class="route-tag">${rank === 0 ? 'LOWEST MAPPED POTHOLE COUNT' : `ALTERNATIVE ${rank}`}</span><h3>Route ${rank + 1}</h3><p>${potholeText}</p></div><div class="route-metrics"><strong>${(item.route.duration / 60).toFixed(0)} min</strong><span>${(item.route.distance / 1000).toFixed(1)} km</span><small>${trafficText}</small></div></article>`;
+  }).join('');
+  results.hidden = false;
+  setTimeout(() => routeMap.invalidateSize(), 100);
+  return ranked[0];
+}
+async function compareRoutes() {
+  const status = document.querySelector('#route-status');
+  const button = document.querySelector('#find-route-button');
+  const destinationText = document.querySelector('#route-destination').value.trim();
+  if (!currentPosition) { status.textContent = 'First tap “Use my live location” and allow location access.'; return; }
+  if (!destinationText) { status.textContent = 'Enter a destination first.'; return; }
+  if (!document.querySelector('#route-consent').checked) { status.textContent = 'Please check the box to allow your start and destination to be sent to OpenStreetMap services for routing.'; return; }
+  button.disabled = true;
+  document.querySelector('#route-results').hidden = true;
+  status.textContent = 'Finding your destination and comparing routes… Your location and destination are being sent to OpenStreetMap services.';
+  try {
+    const destination = await geocodeDestination(destinationText);
+    const routes = await fetchAlternativeRoutes(currentPosition, destination);
+    status.textContent = 'Checking OpenStreetMap for mapped pothole hazards near the route…';
+    let hazards;
+    try { hazards = await findMappedHazards(routes); }
+    catch (error) { hazards = null; }
+    const recommendation = drawRouteAlternatives(routes, destination, hazards);
+    status.textContent = hazards === null ? 'Routes are ready, but mapped pothole information was unavailable. The fastest route is shown first.' : `Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. The recommendation uses mapped hazards only, not live traffic.`;
+  } catch (error) {
+    status.textContent = error.message || 'Could not compare routes. Check your connection and try again.';
+  } finally { button.disabled = false; }
+}
 document.querySelector('#image-input').addEventListener('change', event => {
   setImage(event.target.files?.[0]);
   event.target.value = '';
@@ -308,7 +449,8 @@ document.querySelector('#locate-button').addEventListener('click', startLocation
 document.querySelector('#nav-locate').addEventListener('click', startLocation);
 document.querySelector('#stop-location').addEventListener('click', stopLocation);
 document.querySelector('#analyze-button').addEventListener('click', analyzeImage);
+document.querySelector('#find-route-button').addEventListener('click', compareRoutes);
 document.querySelector('#submit-report').addEventListener('click', saveReport);
-window.addEventListener('load', initMap);
-window.addEventListener('hashchange', () => { if (location.hash === '#map-section' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100); });
+window.addEventListener('load', () => { initMap(); initRouteMap(); });
+window.addEventListener('hashchange', () => { if (location.hash === '#map-section' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100); if (location.hash === '#route-planner' && routeMap) setTimeout(() => routeMap.invalidateSize(), 100); });
 
