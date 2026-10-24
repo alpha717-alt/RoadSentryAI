@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://roadsentry-ai-alpha717.onrender.com/sitemap.xml
