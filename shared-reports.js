@@ -15,6 +15,8 @@
   const submitRow = document.querySelector('.submit-row');
   const consent = document.createElement('label');
   consent.className = 'community-consent';
+  consent.style.cssText = 'display:flex;align-items:flex-start;gap:10px;flex-basis:100%;font-size:.9rem;line-height:1.5;margin:.75rem 0';
+  consent.hidden = !ready;
   consent.innerHTML = '<input id="public-report-consent" type="checkbox"><span>I agree to publish this photo and its exact location on the shared map, where anyone can view it.</span>';
   submitRow?.prepend(consent);
   const status = document.querySelector('#community-status');
@@ -92,6 +94,7 @@
       if (insertError) throw insertError;
       say('Shared successfully. Anyone visiting the site can now see this photo and its exact map location.');
       document.querySelector('#public-report-consent').checked = false;
+      saveButton.disabled = false;
       bypassSubmit = true;
       saveButton.click();
       bypassSubmit = false;
@@ -103,7 +106,7 @@
     } finally {
       bypassSubmit = false;
       sending = false;
-      saveButton.disabled = false;
+      if (!document.querySelector('#submit-message')?.textContent.startsWith('Report saved')) saveButton.disabled = false;
     }
   }, true);
 })();
