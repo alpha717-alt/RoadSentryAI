@@ -468,3 +468,8 @@ document.querySelector('#submit-report').addEventListener('click', saveReport);
 window.addEventListener('load', () => { initMap(); initRouteMap(); });
 window.addEventListener('hashchange', () => { if (location.hash === '#map-section' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100); if (location.hash === '#route-planner' && routeMap) setTimeout(() => routeMap.invalidateSize(), 100); });
 
+const recommendedIdeas = document.createElement('section');
+recommendedIdeas.className = 'section how-section';
+recommendedIdeas.id = 'recommendations';
+recommendedIdeas.innerHTML = '<div class="section-heading"><div><p class="eyebrow">RECOMMENDED NEXT STEPS</p><h2>What’s next for safer roads?</h2></div><span class="privacy-note">Future improvements — not available yet.</span></div><div class="steps"><article><span>01</span><h3>Live traffic</h3><p>Add real-time congestion data so routes can account for traffic and more realistic travel times.</p></article><article><span>02</span><h3>Shared road reports</h3><p>Let people contribute pothole reports to a shared map, with privacy safeguards and moderation.</p></article><article><span>03</span><h3>Community-checked AI</h3><p>Let people confirm or correct pothole detections to build a more useful, trusted report history.</p></article></div>';
+document.querySelector('main').append(recommendedIdeas);
