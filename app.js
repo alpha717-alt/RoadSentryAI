@@ -387,7 +387,7 @@ async function fetchAlternativeRoutes(origin, destination) {
   if (result.code !== 'Ok' || !result.routes?.length) throw new Error('No driving route was found between these places.');
   return result.routes;
 }
-function drawRouteAlternatives(routes, destination, hazards) {
+function drawRouteAlternatives(routes, destination, hazards, origin) {
   if (!routeMap) initRouteMap();
   routeLayers.forEach(layer => routeMap.removeLayer(layer));
   routeLayers = [];
@@ -413,7 +413,7 @@ function drawRouteAlternatives(routes, destination, hazards) {
     const potholeText = item.total === null ? 'Mapped pothole data unavailable' : `${item.total} known nearby pothole${item.total === 1 ? '' : 's'}${item.localCount ? ` (${item.localCount} saved here)` : ''}`;
     return `<article class="route-option ${rank === 0 ? 'is-recommended' : ''}"><div><span class="route-tag">${rank === 0 ? (item.total === null ? 'FASTEST ROUTE AVAILABLE' : 'FEWEST MAPPED HAZARDS') : `ALTERNATIVE ${rank}`}</span><h3>Route ${rank + 1}</h3><p>${potholeText}</p></div><div class="route-metrics"><strong>${(item.route.duration / 60).toFixed(0)} min</strong><span>${(item.route.distance / 1000).toFixed(1)} km</span><small>${trafficText}</small></div></article>`;
   }).join('');
-  results.hidden = false;
+  const routeMapUrl='https://www.google.com/maps/dir/?api=1&origin='+origin.latitude+','+origin.longitude+'&destination='+destination.latitude+','+destination.longitude+'&travelmode=driving';const routeSummary=document.createElement('article');routeSummary.className='route-option route-location-summary';routeSummary.innerHTML='<div><span class="route-tag">ROUTE DETAILS</span><p><strong>Start:</strong> Live location ('+origin.latitude.toFixed(5)+', '+origin.longitude.toFixed(5)+')</p><p><strong>Destination:</strong> '+escapeHtml(destination.name)+'</p>'+(routes[0].distance>500000?'<p class="route-warning">Very long trip — check your GPS location and destination.</p>':'')+'</div><div class="route-metrics"><a class="button button-outline" href="'+routeMapUrl+'" target="_blank" rel="noopener">Open in Google Maps</a><small>Google Maps receives these locations when opened.</small></div>';results.append(routeSummary);results.hidden=false;
   setTimeout(() => routeMap.invalidateSize(), 100);
   return ranked[0];
 }
@@ -446,7 +446,7 @@ async function compareRoutes() {
     let hazards;
     try { hazards = await findMappedHazards(routes); }
     catch (error) { hazards = null; }
-    drawRouteAlternatives(routes, destination, hazards);
+    drawRouteAlternatives(routes, destination, hazards, origin);
     const startText = `Start: ${origin.latitude.toFixed(5)}, ${origin.longitude.toFixed(5)} (about ${Math.round(origin.accuracy)} m accuracy)`;
     const longRouteWarning = routes[0].distance > 500000 ? ' This is a very long trip; confirm the live location and destination are right.' : '';
     status.textContent = hazards === null ? `${startText}. Route data is ready, but mapped pothole information was unavailable; the fastest route is shown first.${longRouteWarning}` : `${startText}. Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. The recommendation uses mapped hazards, not live traffic.${longRouteWarning}`;
@@ -473,3 +473,23 @@ recommendedIdeas.className = 'section how-section';
 recommendedIdeas.id = 'recommendations';
 recommendedIdeas.innerHTML = '<div class="section-heading"><div><p class="eyebrow">RECOMMENDED NEXT STEPS</p><h2>What’s next for safer roads?</h2></div><span class="privacy-note">Future improvements — not available yet.</span></div><div class="steps"><article><span>01</span><h3>Live traffic</h3><p>Add real-time congestion data so routes can account for traffic and more realistic travel times.</p></article><article><span>02</span><h3>Shared road reports</h3><p>Let people contribute pothole reports to a shared map, with privacy safeguards and moderation.</p></article><article><span>03</span><h3>Community-checked AI</h3><p>Let people confirm or correct pothole detections to build a more useful, trusted report history.</p></article></div>';
 document.querySelector('main').append(recommendedIdeas);
+
+
+const backup = document.createElement('section');
+backup.className = 'section report-backup';
+backup.innerHTML = '<div class="card"><h2>Keep a copy of your reports</h2><p>Reports are saved in this browser. Download a CSV backup to keep them.</p><button class="button button-outline" id="download-reports" type="button">Download reports (CSV)</button><p id="download-status" role="status" aria-live="polite"></p></div>';
+document.querySelector('main').append(backup);
+const downloadButton = document.querySelector('#download-reports');
+function refreshBackupButton() { downloadButton.disabled = reports.length === 0; }
+refreshBackupButton();
+document.querySelector('#submit-report').addEventListener('click', () => setTimeout(refreshBackupButton, 0));
+downloadButton.addEventListener('click', () => {
+  if (!reports.length) return;
+  const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
+  const rows = [['date','latitude','longitude','image'], ...reports.map(r => [r.createdAt || '',r.latitude,r.longitude,r.name])];
+  const blob = new Blob([rows.map(row => row.map(cell).join(',')).join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob); const link = document.createElement('a');
+  link.href = url; link.download = 'roadsentry-reports-' + new Date().toISOString().slice(0,10) + '.csv'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  document.querySelector('#download-status').textContent = 'Downloaded ' + reports.length + ' report' + (reports.length === 1 ? '' : 's') + '.';
+});
