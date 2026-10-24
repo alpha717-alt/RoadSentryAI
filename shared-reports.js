@@ -15,8 +15,7 @@
   const submitRow = document.querySelector('.submit-row');
   const consent = document.createElement('label');
   consent.className = 'community-consent';
-  consent.style.cssText = 'display:flex;align-items:flex-start;gap:10px;flex-basis:100%;font-size:.9rem;line-height:1.5;margin:.75rem 0';
-  consent.hidden = !ready;
+  consent.style.cssText = ready ? 'display:flex;align-items:flex-start;gap:10px;flex-basis:100%;font-size:.9rem;line-height:1.5;margin:.75rem 0' : 'display:none';
   consent.innerHTML = '<input id="public-report-consent" type="checkbox"><span>I agree to publish this photo and its exact location on the shared map, where anyone can view it.</span>';
   submitRow?.prepend(consent);
   const status = document.querySelector('#community-status');
