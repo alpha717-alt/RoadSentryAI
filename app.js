@@ -402,7 +402,7 @@ function drawRouteAlternatives(routes, destination, hazards) {
   const recommendedIndex = ranked[0].index;
   routes.forEach((route, index) => {
     const layer = L.geoJSON(route.geometry, { style: { color: index === recommendedIndex ? '#1b7058' : '#82928c', weight: index === recommendedIndex ? 7 : 5, opacity: index === recommendedIndex ? .95 : .65, dashArray: index === recommendedIndex ? null : '8 7' } }).addTo(routeMap);
-    layer.bindPopup(index === recommendedIndex ? 'Fewest mapped potholes (among routes shown)' : 'Alternative route');
+    layer.bindPopup(index === recommendedIndex ? (hazards === null ? 'Fastest available route' : 'Fewest mapped potholes (among routes shown)') : 'Alternative route');
     routeLayers.push(layer);
   });
   const bounds = L.featureGroup([...routeLayers, routeEndMarker, ...(routeUserMarker ? [routeUserMarker] : [])]).getBounds();
@@ -411,7 +411,7 @@ function drawRouteAlternatives(routes, destination, hazards) {
   results.innerHTML = ranked.map((item, rank) => {
     const trafficText = 'Traffic: not available';
     const potholeText = item.total === null ? 'Mapped pothole data unavailable' : `${item.total} known nearby pothole${item.total === 1 ? '' : 's'}${item.localCount ? ` (${item.localCount} saved here)` : ''}`;
-    return `<article class="route-option ${rank === 0 ? 'is-recommended' : ''}"><div><span class="route-tag">${rank === 0 ? 'LOWEST MAPPED POTHOLE COUNT' : `ALTERNATIVE ${rank}`}</span><h3>Route ${rank + 1}</h3><p>${potholeText}</p></div><div class="route-metrics"><strong>${(item.route.duration / 60).toFixed(0)} min</strong><span>${(item.route.distance / 1000).toFixed(1)} km</span><small>${trafficText}</small></div></article>`;
+    return `<article class="route-option ${rank === 0 ? 'is-recommended' : ''}"><div><span class="route-tag">${rank === 0 ? (item.total === null ? 'FASTEST ROUTE AVAILABLE' : 'FEWEST MAPPED HAZARDS') : `ALTERNATIVE ${rank}`}</span><h3>Route ${rank + 1}</h3><p>${potholeText}</p></div><div class="route-metrics"><strong>${(item.route.duration / 60).toFixed(0)} min</strong><span>${(item.route.distance / 1000).toFixed(1)} km</span><small>${trafficText}</small></div></article>`;
   }).join('');
   results.hidden = false;
   setTimeout(() => routeMap.invalidateSize(), 100);
