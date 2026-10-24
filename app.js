@@ -442,24 +442,37 @@ function drawRouteAlternatives(routes, destination, hazards, origin) {
     const localCount = reports.filter(report => routeIncludesHazard(route, { lat: report.latitude, lon: report.longitude })).length;
     return { route, index, osmCount, localCount, total: osmCount === null ? null : osmCount + localCount };
   });
-  ranked.sort((a, b) => a.total === null || b.total === null ? a.route.duration - b.route.duration : a.total - b.total || a.route.duration - b.route.duration);
-  const recommendedIndex = ranked[0].index;
+  const fastest = [...ranked].sort((a, b) => a.route.duration - b.route.duration)[0];
+  let recommended = fastest;
+  const detourLimitSeconds = Math.min(5 * 60, fastest.route.duration * 0.15);
+  if (hazards !== null && fastest.total !== null) {
+    const saferOptions = ranked
+      .filter(item => item.total < fastest.total && item.route.duration <= fastest.route.duration + detourLimitSeconds)
+      .sort((a, b) => a.total - b.total || a.route.duration - b.route.duration);
+    if (saferOptions.length) recommended = saferOptions[0];
+  }
+  const rankedForDisplay = [recommended, ...ranked.filter(item => item !== recommended).sort((a, b) => a.route.duration - b.route.duration)];
+  const recommendedIndex = recommended.index;
   routes.forEach((route, index) => {
     const layer = L.geoJSON(route.geometry, { style: { color: index === recommendedIndex ? '#1b7058' : '#82928c', weight: index === recommendedIndex ? 7 : 5, opacity: index === recommendedIndex ? .95 : .65, dashArray: index === recommendedIndex ? null : '8 7' } }).addTo(routeMap);
-    layer.bindPopup(index === recommendedIndex ? (hazards === null ? 'Fastest available route' : 'Fewest mapped potholes (among routes shown)') : 'Alternative route');
+    layer.bindPopup(index === recommendedIndex ? (recommended === fastest ? 'Fastest route selected' : 'Lower-hazard route within detour limit') : 'Alternative route');
     routeLayers.push(layer);
   });
   const bounds = L.featureGroup([...routeLayers, routeEndMarker, ...(routeUserMarker ? [routeUserMarker] : [])]).getBounds();
   if (bounds.isValid()) routeMap.fitBounds(bounds.pad(.12));
   const results = document.querySelector('#route-results');
-  results.innerHTML = ranked.map((item, rank) => {
+  results.innerHTML = rankedForDisplay.map((item, rank) => {
     const trafficText = 'Traffic: not available';
     const potholeText = item.total === null ? 'Mapped pothole data unavailable' : `${item.total} known nearby pothole${item.total === 1 ? '' : 's'}${item.localCount ? ` (${item.localCount} saved here)` : ''}`;
-    return `<article class="route-option ${rank === 0 ? 'is-recommended' : ''}"><div><span class="route-tag">${rank === 0 ? (item.total === null ? 'FASTEST ROUTE AVAILABLE' : 'FEWEST MAPPED HAZARDS') : `ALTERNATIVE ${rank}`}</span><h3>Route ${rank + 1}</h3><p>${potholeText}</p></div><div class="route-metrics"><strong>${(item.route.duration / 60).toFixed(0)} min</strong><span>${(item.route.distance / 1000).toFixed(1)} km</span><small>${trafficText}</small></div></article>`;
+    const extraMinutes = Math.max(0, Math.ceil((item.route.duration - fastest.route.duration) / 60));
+    const routeLabel = rank === 0
+      ? item === fastest ? (item.total === null ? 'FASTEST ROUTE AVAILABLE' : 'FASTEST ROUTE') : `FEWER MAPPED HAZARDS · +${extraMinutes} MIN`
+      : item === fastest ? 'FASTEST ROUTE' : `ALTERNATIVE ${rank}`;
+    return `<article class="route-option ${rank === 0 ? 'is-recommended' : ''}"><div><span class="route-tag">${routeLabel}</span><h3>Route ${rank + 1}</h3><p>${potholeText}</p></div><div class="route-metrics"><strong>${(item.route.duration / 60).toFixed(0)} min</strong><span>${(item.route.distance / 1000).toFixed(1)} km</span><small>${trafficText}</small></div></article>`;
   }).join('');
   const routeMapUrl='https://www.google.com/maps/dir/?api=1&origin='+origin.latitude+','+origin.longitude+'&destination='+destination.latitude+','+destination.longitude+'&travelmode=driving';const routeSummary=document.createElement('article');routeSummary.className='route-option route-location-summary';routeSummary.innerHTML='<div><span class="route-tag">ROUTE DETAILS</span><p><strong>Start:</strong> Live location ('+origin.latitude.toFixed(5)+', '+origin.longitude.toFixed(5)+')</p><p><strong>Destination:</strong> '+escapeHtml(destination.name)+'</p>'+(routes[0].distance>500000?'<p class="route-warning">Very long trip — check your GPS location and destination.</p>':'')+'</div><div class="route-metrics"><a class="button button-outline" href="'+routeMapUrl+'" target="_blank" rel="noopener">Open in Google Maps</a><small>Google Maps receives these locations when opened.</small></div>';results.append(routeSummary);results.hidden=false;
   setTimeout(() => routeMap.invalidateSize(), 100);
-  return ranked[0];
+  return recommended;
 }
 function getFreshRoutePosition() {
   return new Promise((resolve, reject) => {
@@ -493,7 +506,12 @@ async function compareRoutes() {
     drawRouteAlternatives(routes, destination, hazards, origin);
     const startText = `Start: ${origin.latitude.toFixed(5)}, ${origin.longitude.toFixed(5)} (about ${Math.round(origin.accuracy)} m accuracy)`;
     const longRouteWarning = routes[0].distance > 500000 ? ' This is a very long trip; confirm the live location and destination are right.' : '';
-    status.textContent = hazards === null ? `${startText}. Route data is ready, but mapped pothole information was unavailable; the fastest route is shown first.${longRouteWarning}` : `${startText}. Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. The recommendation uses mapped hazards, not live traffic.${longRouteWarning}`;
+    const recommendationText = hazards === null
+      ? 'Mapped hazard data was unavailable, so the fastest route stays selected.'
+      : recommended === fastest
+        ? 'The fastest route stays selected; no route with fewer mapped hazards fit the detour limit (up to 15% or 5 minutes).'
+        : `The lower-hazard route adds ${Math.ceil((recommended.route.duration - fastest.route.duration) / 60)} minutes, within the detour limit; the fastest option is shown for comparison.`;
+    status.textContent = `${startText}. Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. ${recommendationText} Live traffic isn’t included.${longRouteWarning}`;
   } catch (error) {
     status.textContent = error.message || 'Could not compare routes. Check your connection and try again.';
   } finally { button.disabled = false; }
