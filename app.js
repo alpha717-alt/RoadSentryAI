@@ -89,6 +89,13 @@ app.innerHTML = `
   <footer class="footer"><a class="brand" href="#overview">RoadSentry <span>AI</span></a><span>Safer streets, one report at a time.</span><a href="#overview">Back to top ↑</a></footer>
 `;
 
+const detectionOverlay = document.createElement('canvas');
+detectionOverlay.id = 'detection-overlay';
+detectionOverlay.setAttribute('aria-hidden', 'true');
+Object.assign(detectionOverlay.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', zIndex: '2' });
+detectionOverlay.hidden = true;
+document.querySelector('#upload-zone').append(detectionOverlay);
+
 function setStatus(message, type = '') {
   const status = document.querySelector('#location-status');
   status.className = `location-status ${type}`;
@@ -182,6 +189,7 @@ async function setImage(file) {
     analyzeButton.disabled = true;
     submitButton.disabled = true;
     resultCard.hidden = true;
+    detectionOverlay.hidden = true;
   };
   if (!file) return;
   if (file.size >= MAX_IMAGE_BYTES) {
@@ -203,6 +211,8 @@ async function setImage(file) {
   analyzeButton.disabled = true;
   submitButton.disabled = true;
   resultCard.hidden = true;
+  detectionOverlay.hidden = true;
+  detectionOverlay.getContext('2d')?.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
   document.querySelector('#submit-message').textContent = '';
   submitButton.textContent = 'Save report →';
   const objectUrl = URL.createObjectURL(file);
@@ -319,6 +329,15 @@ async function analyzeImage() {
     const results = await session.run({ [session.inputNames[0]]: input.tensor });
     const output = results[session.outputNames[0]];
     const detections = decodePotholeOutput(output, input);
+    detectionOverlay.width = input.imageWidth;
+    detectionOverlay.height = input.imageHeight;
+    const overlayContext = detectionOverlay.getContext('2d');
+    overlayContext.strokeStyle = '#e54838';
+    overlayContext.lineWidth = Math.max(3, Math.round(Math.min(input.imageWidth, input.imageHeight) * .006));
+    overlayContext.shadowColor = '#ffffff';
+    overlayContext.shadowBlur = Math.max(2, Math.round(Math.min(input.imageWidth, input.imageHeight) * .004));
+    detections.forEach(detection => overlayContext.strokeRect(detection.x1, detection.y1, detection.x2 - detection.x1, detection.y2 - detection.y1));
+    detectionOverlay.hidden = detections.length === 0;
     const card = document.querySelector('#result-card');
     if (detections.length) {
       const best = detections[0];
