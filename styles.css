@@ -69,3 +69,10 @@ body{background:radial-gradient(ellipse at 4% 7%,rgba(201,250,104,.16),transpare
 body{background-size:150% 150%,150% 150%,100% 100%;background-position:0% 10%,100% 80%,50% 50%;animation:roadSentryPageGlow 34s ease-in-out infinite alternate}
 @keyframes roadSentryPageGlow{0%{background-position:0% 10%,100% 80%,50% 50%}100%{background-position:100% 70%,0% 20%,50% 50%}}
 @media(prefers-reduced-motion:reduce){body{animation:none;background-position:50% 50%,50% 50%,50% 50%}}
+
+
+/* Visible ambient glow drifting behind the light sections */
+.report-section,#route-planner,#community-reports,#workflow,#recommendations{isolation:isolate;overflow:hidden}
+.report-section::before,#route-planner::before,#community-reports::before,#workflow::before,#recommendations::before{content:'';position:absolute;inset:-18%;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at 18% 35%,rgba(201,250,104,.34),transparent 34%),radial-gradient(ellipse at 78% 62%,rgba(56,177,163,.27),transparent 38%),radial-gradient(ellipse at 50% 95%,rgba(165,224,209,.2),transparent 36%);background-size:130% 130%;animation:roadSentryGlowDrift 16s ease-in-out infinite alternate}
+@keyframes roadSentryGlowDrift{0%{transform:translate3d(-3%,1%,0) scale(.96);background-position:0% 20%}100%{transform:translate3d(3%,-1%,0) scale(1.04);background-position:100% 80%}}
+@media(prefers-reduced-motion:reduce){.report-section::before,#route-planner::before,#community-reports::before,#workflow::before,#recommendations::before{animation:none;transform:none}}
