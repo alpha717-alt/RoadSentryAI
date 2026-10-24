@@ -417,6 +417,17 @@ function drawRouteAlternatives(routes, destination, hazards) {
   setTimeout(() => routeMap.invalidateSize(), 100);
   return ranked[0];
 }
+function getFreshRoutePosition() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(position => {
+      updateLocation(position);
+      resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy });
+    }, error => {
+      const message = error.code === 1 ? 'Location access was denied. Allow it, then try again.' : 'Could not refresh your location. Check GPS and try again.';
+      reject(new Error(message));
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  });
+}
 async function compareRoutes() {
   const status = document.querySelector('#route-status');
   const button = document.querySelector('#find-route-button');
@@ -426,16 +437,20 @@ async function compareRoutes() {
   if (!document.querySelector('#route-consent').checked) { status.textContent = 'Please check the box to allow your start and destination to be sent to OpenStreetMap services for routing.'; return; }
   button.disabled = true;
   document.querySelector('#route-results').hidden = true;
-  status.textContent = 'Finding your destination and comparing routes… Your location and destination are being sent to OpenStreetMap services.';
+  status.textContent = 'Refreshing your live location…';
   try {
+    const origin = await getFreshRoutePosition();
+    status.textContent = 'Finding your destination and comparing routes… Your current coordinates and destination are sent to OpenStreetMap services.';
     const destination = await geocodeDestination(destinationText);
-    const routes = await fetchAlternativeRoutes(currentPosition, destination);
+    const routes = await fetchAlternativeRoutes(origin, destination);
     status.textContent = 'Checking OpenStreetMap for mapped pothole hazards near the route…';
     let hazards;
     try { hazards = await findMappedHazards(routes); }
     catch (error) { hazards = null; }
-    const recommendation = drawRouteAlternatives(routes, destination, hazards);
-    status.textContent = hazards === null ? 'Routes are ready, but mapped pothole information was unavailable. The fastest route is shown first.' : `Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. The recommendation uses mapped hazards only, not live traffic.`;
+    drawRouteAlternatives(routes, destination, hazards);
+    const startText = `Start: ${origin.latitude.toFixed(5)}, ${origin.longitude.toFixed(5)} (about ${Math.round(origin.accuracy)} m accuracy)`;
+    const longRouteWarning = routes[0].distance > 500000 ? ' This is a very long trip; confirm the live location and destination are right.' : '';
+    status.textContent = hazards === null ? `${startText}. Route data is ready, but mapped pothole information was unavailable; the fastest route is shown first.${longRouteWarning}` : `${startText}. Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. The recommendation uses mapped hazards, not live traffic.${longRouteWarning}`;
   } catch (error) {
     status.textContent = error.message || 'Could not compare routes. Check your connection and try again.';
   } finally { button.disabled = false; }
