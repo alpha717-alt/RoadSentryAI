@@ -64,7 +64,7 @@ app.innerHTML = `
     <section class="section route-section" id="route-planner">
       <div class="section-heading"><div><p class="eyebrow">POTHOLE-AWARE ROUTING</p><h2>Find a route</h2></div><span class="privacy-note">Compares alternate OpenStreetMap routes with hazards mapped nearby.</span></div>
       <div class="route-controls card">
-        <div class="route-control-copy"><h3>Where are you going?</h3><p>Start from your shared live location. Enter a destination to compare routes.</p></div>
+        <div class="route-control-copy"><h3>Where are you going?</h3><p>The route planner gets a fresh GPS location when you compare routes. Enter a destination to begin.</p></div>
         <label class="route-destination-label" for="route-destination">Destination</label>
         <div class="route-form"><input id="route-destination" type="text" autocomplete="street-address" placeholder="Enter an address or place"><button class="button button-primary" id="find-route-button" type="button">Compare routes <span aria-hidden="true">→</span></button></div>
         <label class="route-consent"><input id="route-consent" type="checkbox"><span>When I compare routes, I agree to share my current coordinates and destination with OpenStreetMap search, OSRM routing, and OpenStreetMap hazard data services.</span></label>
@@ -432,7 +432,6 @@ async function compareRoutes() {
   const status = document.querySelector('#route-status');
   const button = document.querySelector('#find-route-button');
   const destinationText = document.querySelector('#route-destination').value.trim();
-  if (!currentPosition) { status.textContent = 'First tap “Use my live location” and allow location access.'; return; }
   if (!destinationText) { status.textContent = 'Enter a destination first.'; return; }
   if (!document.querySelector('#route-consent').checked) { status.textContent = 'Please check the box to allow your start and destination to be sent to OpenStreetMap services for routing.'; return; }
   button.disabled = true;
