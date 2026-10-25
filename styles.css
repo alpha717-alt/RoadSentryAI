@@ -99,3 +99,8 @@ p{max-width:72ch}
 @keyframes rs-text-wipe{from{clip-path:inset(0 100% 0 0);transform:translateX(-18px);opacity:.55}to{clip-path:inset(0 0 0 0);transform:translateX(0);opacity:1}}
 @supports (animation-timeline:view()){.section-heading h2,.section-heading .eyebrow,.section-heading p,.how-section>h2,.how-section>.eyebrow,.how-section>p,.card-heading h3,.card-heading p,.steps article h3,.steps article p,.route-control-copy h3,.route-control-copy p,.map-intro{animation:rs-text-wipe both;animation-timeline:view();animation-range:entry 0% entry 55%}}
 @media(prefers-reduced-motion:reduce){.section-heading h2,.section-heading .eyebrow,.section-heading p,.how-section>h2,.how-section>.eyebrow,.how-section>p,.card-heading h3,.card-heading p,.steps article h3,.steps article p,.route-control-copy h3,.route-control-copy p,.map-intro{animation:none!important;clip-path:none!important;transform:none!important;opacity:1!important}}
+
+
+/* Reveal section copy from left to right as it enters view */
+@supports (animation-timeline:view()){#report h2,#report p,#route-planner h2,#route-planner p,#map-section h2,#map-section p,#community-reports h2,#community-reports p,#workflow h2,#workflow p,#recommendations h2,#recommendations p{animation:rs-text-wipe both;animation-timeline:view();animation-range:entry 0% entry 58%}}
+@media(prefers-reduced-motion:reduce){#report h2,#report p,#route-planner h2,#route-planner p,#map-section h2,#map-section p,#community-reports h2,#community-reports p,#workflow h2,#workflow p,#recommendations h2,#recommendations p{animation:none!important;clip-path:none!important;transform:none!important;opacity:1!important}}
