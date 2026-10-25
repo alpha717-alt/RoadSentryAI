@@ -67,7 +67,7 @@ app.innerHTML = `
     <section class="section route-section" id="route-planner">
       <div class="section-heading"><div><p class="eyebrow">POTHOLE-AWARE ROUTING</p><h2>Find a route</h2></div><span class="privacy-note">Compares alternate OpenStreetMap routes with hazards mapped nearby.</span></div>
       <div class="route-controls card">
-        <div class="route-control-copy"><h3>Where are you going?</h3><p>The route planner gets a fresh GPS location when you compare routes. Enter a destination to begin.</p></div>
+        <div class="route-control-copy"><h3>Where are you going?</h3><p>We’ll request a fresh, high-accuracy GPS fix for every comparison. Check the live start pin before choosing a route.</p></div>
         <label class="route-destination-label" for="route-destination">Destination</label>
         <div class="route-form"><input id="route-destination" type="text" autocomplete="street-address" placeholder="Enter an address or place"><button class="button button-primary" id="find-route-button" type="button">Compare routes <span aria-hidden="true">→</span></button></div>
         <label class="route-consent"><input id="route-consent" type="checkbox"><span>When I compare routes, I agree to share my current coordinates and destination with OpenStreetMap search, OSRM routing, and OpenStreetMap hazard data services.</span></label>
@@ -342,10 +342,10 @@ async function analyzeImage() {
     if (detections.length) {
       const best = detections[0];
       const areaPercent = ((best.x2 - best.x1) * (best.y2 - best.y1) / (input.imageWidth * input.imageHeight) * 100).toFixed(1);
-      card.innerHTML = `<div><span class="step">ON-DEVICE AI RESULT</span><h3>${detections.length} possible pothole${detections.length === 1 ? '' : 's'} detected</h3><p>The largest detection covers about ${areaPercent}% of the image. Check the photo and outlined area yourself; this estimate is not the pothole’s real-world size.</p></div><span class="confidence">${Math.round(best.confidence * 100)}% model confidence</span>`;
+      card.innerHTML = `<div><span class="ai-result-label">ON-DEVICE AI RESULT</span><h3>${detections.length} possible pothole${detections.length === 1 ? '' : 's'} detected</h3><p>The largest detection covers about ${areaPercent}% of the image. Check the photo and outlined area yourself; this estimate is not the pothole’s real-world size.</p></div><span class="confidence">${Math.round(best.confidence * 100)}% model confidence</span>`;
       status.textContent = 'Analysis ran in this browser. Results can be wrong; please review the photo.';
     } else {
-      card.innerHTML = '<div><span class="step">ON-DEVICE AI RESULT</span><h3>No pothole detected</h3><p>The model did not find a pothole with enough confidence. This does not prove the road is clear; try a closer, well-lit photo.</p></div><span class="confidence">No confident detection</span>';
+      card.innerHTML = '<div><span class="ai-result-label">ON-DEVICE AI RESULT</span><h3>No pothole detected</h3><p>The model did not find a pothole with enough confidence. This does not prove the road is clear; try a closer, well-lit photo.</p></div><span class="confidence">No confident detection</span>';
       status.textContent = 'Analysis ran in this browser. Results can be wrong; please review the photo.';
     }
     card.hidden = false;
@@ -477,8 +477,11 @@ function drawRouteAlternatives(routes, destination, hazards, origin) {
 function getFreshRoutePosition() {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(position => {
+      const { latitude, longitude, accuracy } = position.coords;
+      if (![latitude, longitude, accuracy].every(Number.isFinite)) { reject(new Error('Your browser returned an invalid GPS location. Try again.')); return; }
+      if (accuracy > 5000) { reject(new Error(`GPS accuracy is about ${Math.round(accuracy)} m. Move to an open area and try again for a reliable route.`)); return; }
       updateLocation(position);
-      resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy });
+      resolve({ latitude, longitude, accuracy });
     }, error => {
       const message = error.code === 1 ? 'Location access was denied. Allow it, then try again.' : 'Could not refresh your location. Check GPS and try again.';
       reject(new Error(message));
@@ -503,14 +506,15 @@ async function compareRoutes() {
     let hazards;
     try { hazards = await findMappedHazards(routes); }
     catch (error) { hazards = null; }
-    drawRouteAlternatives(routes, destination, hazards, origin);
-    const startText = `Start: ${origin.latitude.toFixed(5)}, ${origin.longitude.toFixed(5)} (about ${Math.round(origin.accuracy)} m accuracy)`;
+    const recommended = drawRouteAlternatives(routes, destination, hazards, origin);
+    const fastest = routes.reduce((best, route) => route.duration < best.duration ? route : best, routes[0]);
+    const startText = `Live GPS start: ${origin.latitude.toFixed(5)}, ${origin.longitude.toFixed(5)} (about ${Math.round(origin.accuracy)} m accuracy)`;
     const longRouteWarning = routes[0].distance > 500000 ? ' This is a very long trip; confirm the live location and destination are right.' : '';
     const recommendationText = hazards === null
       ? 'Mapped hazard data was unavailable, so the fastest route stays selected.'
-      : recommended === fastest
+      : recommended.route === fastest
         ? 'The fastest route stays selected; no route with fewer mapped hazards fit the detour limit (up to 15% or 5 minutes).'
-        : `The lower-hazard route adds ${Math.ceil((recommended.route.duration - fastest.route.duration) / 60)} minutes, within the detour limit; the fastest option is shown for comparison.`;
+        : `The lower-hazard route adds ${Math.ceil((recommended.route.duration - fastest.duration) / 60)} minutes, within the detour limit; the fastest option is shown for comparison.`;
     status.textContent = `${startText}. Compared ${routes.length} route option${routes.length === 1 ? '' : 's'} to ${destination.name}. ${recommendationText} Live traffic isn’t included.${longRouteWarning}`;
   } catch (error) {
     status.textContent = error.message || 'Could not compare routes. Check your connection and try again.';
