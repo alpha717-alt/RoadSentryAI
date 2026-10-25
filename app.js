@@ -109,11 +109,11 @@ app.innerHTML = `
   <footer class="footer"><a class="brand" href="#overview">RoadSentry <span>AI</span></a><span>Safer streets, one report at a time.</span><a href="#overview">Back to top ↑</a></footer>
 `;
 
-function normalizeEmergencyPhone(value) { return String(value || '').replace(/[\\s().-]/g, ''); }
+function normalizeEmergencyPhone(value) { return String(value || '').replace(/[\s().-]/g, ''); }
 function saveEmergencyContact() {
   const phone = normalizeEmergencyPhone(document.querySelector('#emergency-phone').value);
   const status = document.querySelector('#emergency-status');
-  if (!/^\\+?[0-9]{7,15}$/.test(phone)) { status.textContent = 'Enter a valid phone number with country code, such as +1 555 123 4567.'; return; }
+  if (!/^\+?[0-9]{7,15}$/.test(phone)) { status.textContent = 'Enter a valid phone number with country code, such as +1 555 123 4567.'; return; }
   emergencyContact = phone;
   localStorage.setItem('roadsentry-emergency-contact', phone);
   document.querySelector('#open-emergency-sms').hidden = true;
