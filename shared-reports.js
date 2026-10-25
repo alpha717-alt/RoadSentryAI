@@ -55,12 +55,9 @@
   const saveButton = document.querySelector('#submit-report');
   saveButton?.addEventListener('click', async event => {
     if (bypassSubmit || sending) return;
+    if (!document.querySelector('#public-report-consent')?.checked) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (!document.querySelector('#public-report-consent')?.checked) {
-      say('Before sharing, check the box to publish this photo and exact location for everyone to see.');
-      return;
-    }
     const values = [...document.querySelectorAll('#coordinates strong')].map(item => Number(item.textContent));
     const preview = document.querySelector('#image-preview');
     if (values.length !== 2 || !values.every(Number.isFinite) || !preview?.naturalWidth) { say('Choose an image and get your live location before sharing.'); return; }

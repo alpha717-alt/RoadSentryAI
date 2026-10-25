@@ -192,9 +192,9 @@ async function setImage(file) {
     detectionOverlay.hidden = true;
   };
   if (!file) return;
-  if (file.size >= MAX_IMAGE_BYTES) {
+  if (file.size > MAX_IMAGE_BYTES) {
     resetSelection();
-    message.textContent = 'That image is 5 MB or larger. Choose an image under 5 MB.';
+    message.textContent = 'That image is larger than 5 MB. Choose an image up to 5 MB.';
     message.className = 'field-message error';
     return;
   }
