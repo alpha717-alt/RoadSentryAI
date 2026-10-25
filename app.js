@@ -1,6 +1,7 @@
 const app = document.querySelector('#app');
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 let currentPosition = null;
+let emergencyContact = localStorage.getItem('roadsentry-emergency-contact') || '';
 let activeFile = null;
 let leafletMap = null;
 let overviewMap = null;
@@ -64,6 +65,25 @@ app.innerHTML = `
       <p class="submit-message" id="submit-message" role="status"></p>
     </section>
 
+    <section class="section emergency-section" id="emergency-contact">
+      <div class="section-heading">
+        <div><p class="eyebrow">EMERGENCY CONTACT</p><h2>Need help after a crash?</h2></div>
+        <span class="privacy-note">Your contact number is saved only in this browser.</span>
+      </div>
+      <div class="emergency-card card">
+        <p class="emergency-explainer">This website does not detect crashes from the hardware. If you need help, save a trusted contact and prepare a text with your fresh location.</p>
+        <div class="emergency-form">
+          <label class="emergency-field" for="emergency-phone">Trusted contact phone number
+            <input id="emergency-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 555 123 4567">
+          </label>
+          <button class="button button-outline" id="save-emergency-contact" type="button">Save contact</button>
+          <button class="button button-primary" id="prepare-emergency-text" type="button">Get location and prepare text</button>
+          <a class="button button-primary" id="open-emergency-sms" href="#" hidden>Open SMS draft</a>
+        </div>
+        <p class="emergency-status" id="emergency-status" role="status" aria-live="polite">No message is sent automatically. Review the draft in your messaging app and press Send.</p>
+      </div>
+    </section>
+
     <section class="section route-section" id="route-planner">
       <div class="section-heading"><div><p class="eyebrow">POTHOLE-AWARE ROUTING</p><h2>Find a route</h2></div><span class="privacy-note">Compares alternate OpenStreetMap routes with hazards mapped nearby.</span></div>
       <div class="route-controls card">
@@ -88,6 +108,36 @@ app.innerHTML = `
   </main>
   <footer class="footer"><a class="brand" href="#overview">RoadSentry <span>AI</span></a><span>Safer streets, one report at a time.</span><a href="#overview">Back to top ↑</a></footer>
 `;
+
+function normalizeEmergencyPhone(value) { return String(value || '').replace(/[\s().-]/g, ''); }
+function saveEmergencyContact() {
+  const phone = normalizeEmergencyPhone(document.querySelector('#emergency-phone').value);
+  const status = document.querySelector('#emergency-status');
+  if (!/^\+?[0-9]{7,15}$/.test(phone)) { status.textContent = 'Enter a valid phone number with country code, such as +1 555 123 4567.'; return; }
+  emergencyContact = phone;
+  localStorage.setItem('roadsentry-emergency-contact', phone);
+  document.querySelector('#open-emergency-sms').hidden = true;
+  status.textContent = 'Contact saved on this device. No message has been sent.';
+}
+function prepareEmergencyText() {
+  const status = document.querySelector('#emergency-status'), draft = document.querySelector('#open-emergency-sms');
+  draft.hidden = true;
+  if (!emergencyContact) { status.textContent = 'Save a trusted contact first.'; return; }
+  if (!navigator.geolocation || !window.isSecureContext) { status.textContent = 'A secure page and browser location support are needed to get your current location.'; return; }
+  status.textContent = 'Requesting a fresh location. Allow the browser prompt to continue.';
+  navigator.geolocation.getCurrentPosition(position => {
+    const { latitude, longitude, accuracy } = position.coords;
+    if (![latitude, longitude].every(Number.isFinite) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) { status.textContent = 'The browser returned an invalid location. Try again.'; return; }
+    const mapUrl = 'https://maps.google.com/?q=' + encodeURIComponent(latitude + ',' + longitude);
+    const accuracyText = Number.isFinite(accuracy) ? ' (location accuracy about ±' + Math.round(accuracy) + ' m)' : '';
+    const message = 'I have faced a crash. Help needed. My current location: ' + mapUrl + accuracyText;
+    draft.href = 'sms:' + emergencyContact + '?body=' + encodeURIComponent(message);
+    draft.hidden = false;
+    status.textContent = 'Text draft is ready. Open it, check the contact and location, then press Send.';
+  }, error => {
+    status.textContent = error.code === 1 ? 'Location permission was denied. Allow location access and try again.' : 'Could not get your current location. Move to a place with GPS or network signal and try again.';
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+}
 
 const detectionOverlay = document.createElement('canvas');
 detectionOverlay.id = 'detection-overlay';
@@ -531,6 +581,10 @@ document.querySelector('#stop-location').addEventListener('click', stopLocation)
 document.querySelector('#analyze-button').addEventListener('click', analyzeImage);
 document.querySelector('#find-route-button').addEventListener('click', compareRoutes);
 document.querySelector('#submit-report').addEventListener('click', saveReport);
+document.querySelector('#emergency-phone').value = emergencyContact;
+document.querySelector('#save-emergency-contact').addEventListener('click', saveEmergencyContact);
+document.querySelector('#prepare-emergency-text').addEventListener('click', prepareEmergencyText);
+if (emergencyContact) document.querySelector('#emergency-status').textContent = 'Contact saved on this device. No message has been sent.';
 window.addEventListener('load', () => { initMap(); initRouteMap(); });
 window.addEventListener('hashchange', () => { if (location.hash === '#map-section' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100); if (location.hash === '#route-planner' && routeMap) setTimeout(() => routeMap.invalidateSize(), 100); });
 

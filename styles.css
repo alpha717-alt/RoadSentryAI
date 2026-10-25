@@ -104,3 +104,16 @@ p{max-width:72ch}
 /* Reveal section copy from left to right as it enters view */
 @supports (animation-timeline:view()){#report h2,#report p,#route-planner h2,#route-planner p,#map-section h2,#map-section p,#community-reports h2,#community-reports p,#workflow h2,#workflow p,#recommendations h2,#recommendations p{animation:rs-text-wipe both;animation-timeline:view();animation-range:entry 0% entry 58%}}
 @media(prefers-reduced-motion:reduce){#report h2,#report p,#route-planner h2,#route-planner p,#map-section h2,#map-section p,#community-reports h2,#community-reports p,#workflow h2,#workflow p,#recommendations h2,#recommendations p{animation:none!important;clip-path:none!important;transform:none!important;opacity:1!important}}
+
+
+/* Emergency contact and location text draft */
+.emergency-section{background:linear-gradient(135deg,#f5f8f4,#e8f2ee)}
+.emergency-card{max-width:980px;margin:0 auto}
+.emergency-explainer{max-width:72ch;margin:0 0 18px;color:var(--muted)}
+.emergency-form{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;align-items:end;gap:12px}
+.emergency-field{display:grid;gap:7px;color:var(--forest);font-size:.82rem;font-weight:700}
+.emergency-field input{width:100%;min-height:52px;border:1px solid #cbd7ce;border-radius:14px;padding:13px 15px;background:#fbfcf9;color:var(--ink);font:inherit;font-weight:500}
+.emergency-field input:focus{outline:3px solid rgba(68,163,148,.22);border-color:#48a494}
+.emergency-status{margin:14px 0 0;color:var(--muted);font-size:.82rem}
+#open-emergency-sms[hidden]{display:none}
+@media(max-width:760px){.emergency-form{grid-template-columns:1fr}.emergency-form .button{width:100%;justify-content:center}}
